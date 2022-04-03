@@ -1,0 +1,32 @@
+{
+    "name": "@eugeneli/core-alerter",
+    "description": "Core Event Alerter",
+    "homepage": "https://github.com/eugeneli/core-alerter",
+    "version": "1.0.0",
+    "license": "MIT",
+    "keywords": [
+        "ark",
+        "solar",
+        "core",
+        "crypto",
+        "blockchain"
+    ],
+    "main": "dist/index.js",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "prepublishOnly": "yarn pretest",
+        "pretest": "yarn lint && yarn build",
+        "compile": "../../node_modules/typescript/bin/tsc",
+        "build": "yarn clean && yarn compile",
+        "build:watch": "yarn clean && yarn compile -w",
+        "lint": "../../node_modules/eslint/bin/eslint.js 'src/**/*.ts' --fix"
+    },
+    "devDependencies": {
+        "typescript": "^4.4.3"
+    },
+    "dependencies": {
+        "@arkecosystem/core-kernel": "^3.0.0"
+    }
+}
