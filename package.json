@@ -12,16 +12,17 @@
         "blockchain"
     ],
     "main": "dist/index.js",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eugeneli/core-alerter.git"
+      },
     "files": [
         "dist"
     ],
     "scripts": {
-        "prepublishOnly": "yarn pretest",
-        "pretest": "yarn lint && yarn build",
         "compile": "../../node_modules/typescript/bin/tsc",
         "build": "yarn clean && yarn compile",
-        "build:watch": "yarn clean && yarn compile -w",
-        "lint": "../../node_modules/eslint/bin/eslint.js 'src/**/*.ts' --fix"
+        "build:watch": "yarn clean && yarn compile -w"
     },
     "devDependencies": {
         "typescript": "^4.4.3"
