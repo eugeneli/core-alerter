@@ -14,6 +14,7 @@ Installation is quick an easy, just follow these 2 simple steps:
 
 ## How do I get the Discord ID?
 Right click the user account you want to ping (it can even be your own) and click `Copy ID`
+
 ![Copy ID](https://i.imgur.com/GtVxQNe.jpg)
 
 ## Sample Config: 
