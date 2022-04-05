@@ -26,8 +26,8 @@ Right click the user account you want to ping (it can even be your own) and clic
         "forgingThreshold": 53,
         "delegates": [
             {
-                name: "delegate_name",
-                discordId: "111222333444555667"
+                "name": "delegate_name",
+                "discordId": "111222333444555667"
             }
         ],
         "discord": {
