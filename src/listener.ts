@@ -86,7 +86,7 @@ export class Listener {
 
             if (rank > this.forgingThreshold && prevRank <= this.forgingThreshold) {
                 noLongerForging.push(name);
-            } else if (rank <= this.forgingThreshold && prevRank > this.forgingThreshold ) {
+            } else if (rank !== -1 && rank <= this.forgingThreshold && prevRank > this.forgingThreshold ) {
                 forgingAgain.push(name);
             } else if (rank !== prevRank) {
                 newRanks.push({
