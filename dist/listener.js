@@ -78,7 +78,7 @@ let Listener = class Listener {
                 if (rank > this.forgingThreshold && prevRank <= this.forgingThreshold) {
                     noLongerForging.push(name);
                 }
-                else if (rank <= this.forgingThreshold && prevRank > this.forgingThreshold) {
+                else if (rank !== -1 && rank <= this.forgingThreshold && prevRank > this.forgingThreshold) {
                     forgingAgain.push(name);
                 }
                 else if (rank !== prevRank) {
@@ -93,13 +93,13 @@ let Listener = class Listener {
             let forgingAgainMsg = "";
             let rankChangeMsg = "";
             noLongerForging.forEach(name => {
-                noLongerForgingMsg += `🚫 **${name}** is no longer forging! <@${this.watchedDelegates.get(name)}> \n`;
+                noLongerForgingMsg += `🚫 **${name}** is no longer forging! ${this.getPing(this.watchedDelegates.get(name))} \n`;
             });
             forgingAgain.forEach(name => {
-                forgingAgainMsg += `🎉 **${name}** is forging! <@${this.watchedDelegates.get(name)}> \n`;
+                forgingAgainMsg += `🎉 **${name}** is forging! ${this.getPing(this.watchedDelegates.get(name))} \n`;
             });
             newRanks.forEach(delegateRank => {
-                rankChangeMsg += `⚠️ **${delegateRank.name}** changed ranks! (${delegateRank.prevRank} ➡️ ${delegateRank.rank}) <@${this.watchedDelegates.get(delegateRank.name)}> \n`;
+                rankChangeMsg += `⚠️ **${delegateRank.name}** changed ranks! (${delegateRank.prevRank} ➡️ ${delegateRank.rank}) ${this.getPing(this.watchedDelegates.get(delegateRank.name))} \n`;
             });
             if (noLongerForging.length > 0) {
                 this.pingDiscord(noLongerForgingMsg);
@@ -111,6 +111,9 @@ let Listener = class Listener {
                 this.pingDiscord(rankChangeMsg);
             }
         });
+    }
+    getPing(discordId) {
+        return discordId !== "" ? `<@${discordId}>` : "";
     }
     notifyMissedBlock(payload) {
         const wallet = payload.data;

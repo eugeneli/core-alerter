@@ -102,15 +102,15 @@ export class Listener {
         let rankChangeMsg = "";
 
         noLongerForging.forEach(name => {
-            noLongerForgingMsg += `🚫 **${name}** is no longer forging! <@${this.watchedDelegates.get(name)}> \n`;
+            noLongerForgingMsg += `🚫 **${name}** is no longer forging! ${this.getPing(this.watchedDelegates.get(name))} \n`;
         });
 
         forgingAgain.forEach(name => {
-            forgingAgainMsg += `🎉 **${name}** is forging! <@${this.watchedDelegates.get(name)}> \n`;
+            forgingAgainMsg += `🎉 **${name}** is forging! ${this.getPing(this.watchedDelegates.get(name))} \n`;
         });
 
         newRanks.forEach(delegateRank => {
-            rankChangeMsg += `⚠️ **${delegateRank.name}** changed ranks! (${delegateRank.prevRank} ➡️ ${delegateRank.rank}) <@${this.watchedDelegates.get(delegateRank.name)}> \n`;
+            rankChangeMsg += `⚠️ **${delegateRank.name}** changed ranks! (${delegateRank.prevRank} ➡️ ${delegateRank.rank}) ${this.getPing(this.watchedDelegates.get(delegateRank.name))} \n`;
         });
 
         if (noLongerForging.length > 0) {
@@ -122,6 +122,10 @@ export class Listener {
         if (newRanks.length > 0) {
             this.pingDiscord(rankChangeMsg);
         }
+    }
+
+    private getPing(discordId: string): string {
+	return discordId !== "" ? `<@${discordId}>` : "";
     }
 
     private notifyMissedBlock(payload: any): void {
