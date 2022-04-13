@@ -9,6 +9,10 @@ export class Listener {
     @Container.tagged("plugin", "@eugeneli/core-alerter")
     private readonly configuration!: Providers.PluginConfiguration;
 
+    @Container.inject(Container.Identifiers.WalletRepository)
+    @Container.tagged("state", "blockchain")
+    private readonly walletRepository!: Contracts.State.WalletRepository;
+
     @Container.inject(Container.Identifiers.LogService)
     private readonly logger!: Contracts.Kernel.Logger;
 
@@ -56,8 +60,8 @@ export class Listener {
         );
 
         // Initialize watched delegates' ranks
-        const activeDelegates: any[] = await this.getActiveDelegates();
-        activeDelegates.forEach(delegate => {
+        const delegates: any[] = await this.getDelegates();
+        delegates.forEach(delegate => {
             if (this.watchedDelegates.has(delegate.name)) {
                 this.delegateToRank.set(delegate.name, delegate.rank);
             }
@@ -71,22 +75,20 @@ export class Listener {
         const noLongerForging: string[] = [];
         const forgingAgain: string[] = [];
         const newRanks: any[] = [];
-        const activeDelegates: any[] = await this.getActiveDelegates();
+        const delegates: any[] = await this.getDelegates();
 
         Array.from(this.watchedDelegates.keys()).forEach(name => {
             // If we never cached this delegate name's rank, it means we never found it to be an active delegate
             if (!this.delegateToRank.has(name)) {
                 return;
             }
-            const rank = this.getRank(activeDelegates, name);
-            const prevRank = this.delegateToRank.get(name);
 
-            // Update rank
-            this.delegateToRank.set(name, rank);
+            const rank = this.getRank(delegates, name);
+            const prevRank = this.delegateToRank.get(name);
 
             if (rank > this.forgingThreshold && prevRank <= this.forgingThreshold) {
                 noLongerForging.push(name);
-            } else if (rank !== -1 && rank <= this.forgingThreshold && prevRank > this.forgingThreshold ) {
+            } else if (rank <= this.forgingThreshold && prevRank > this.forgingThreshold ) {
                 forgingAgain.push(name);
             } else if (rank !== prevRank) {
                 newRanks.push({
@@ -95,6 +97,9 @@ export class Listener {
                     rank
                 });
             }
+
+            // Update rank
+            this.delegateToRank.set(name, rank);
         });
 
         let noLongerForgingMsg = "";
@@ -155,24 +160,21 @@ export class Listener {
         });  
     }
 
-    private getRank(activeDelegates: any[], name: string) {
-        const filtered = activeDelegates.filter(delegate => delegate.name === name);
-        return filtered.length === 1 ? filtered[0].rank : -1;
+    private getRank(delegates: any[], name: string) {
+        const filtered = delegates.filter(delegate => delegate.name === name);
+        return filtered.length === 1 ? filtered[0].rank : null;
     }
 
-    private async getActiveDelegates() {
-        const activeDelegates: Contracts.State.Wallet[] = await this.triggers.call(
-            "getActiveDelegates",
-            {},
-        );
-        if (!activeDelegates) {
-            return [];
-        }
-        return activeDelegates.map((wallet) => {
-            return {
-                name: wallet.getAttribute("delegate.username"),
-                rank: wallet.getAttribute("delegate.rank")
-            }
-        });
+    private async getDelegates() {
+        const delegates: readonly Contracts.State.Wallet[] = await this.walletRepository.allByUsername();
+        return [...delegates]
+            .sort((a, b) => b.getAttribute("delegate.voteBalance")
+                .comparedTo(a.getAttribute("delegate.voteBalance")))
+            .map((wallet, index) => {
+                return {
+                    name: wallet.getAttribute("delegate.username"),
+                    rank: index + 1
+                }    
+            });
     }
 }

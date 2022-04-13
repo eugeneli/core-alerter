@@ -50,8 +50,8 @@ let Listener = class Listener {
             this.watchedDelegates = new Map(this.configuration.get("delegates")
                 .map(delegate => [delegate.name, delegate.discordId]));
             // Initialize watched delegates' ranks
-            const activeDelegates = yield this.getActiveDelegates();
-            activeDelegates.forEach(delegate => {
+            const delegates = yield this.getDelegates();
+            delegates.forEach(delegate => {
                 if (this.watchedDelegates.has(delegate.name)) {
                     this.delegateToRank.set(delegate.name, delegate.rank);
                 }
@@ -65,20 +65,18 @@ let Listener = class Listener {
             const noLongerForging = [];
             const forgingAgain = [];
             const newRanks = [];
-            const activeDelegates = yield this.getActiveDelegates();
+            const delegates = yield this.getDelegates();
             Array.from(this.watchedDelegates.keys()).forEach(name => {
                 // If we never cached this delegate name's rank, it means we never found it to be an active delegate
                 if (!this.delegateToRank.has(name)) {
                     return;
                 }
-                const rank = this.getRank(activeDelegates, name);
+                const rank = this.getRank(delegates, name);
                 const prevRank = this.delegateToRank.get(name);
-                // Update rank
-                this.delegateToRank.set(name, rank);
                 if (rank > this.forgingThreshold && prevRank <= this.forgingThreshold) {
                     noLongerForging.push(name);
                 }
-                else if (rank !== -1 && rank <= this.forgingThreshold && prevRank > this.forgingThreshold) {
+                else if (rank <= this.forgingThreshold && prevRank > this.forgingThreshold) {
                     forgingAgain.push(name);
                 }
                 else if (rank !== prevRank) {
@@ -88,6 +86,8 @@ let Listener = class Listener {
                         rank
                     });
                 }
+                // Update rank
+                this.delegateToRank.set(name, rank);
             });
             let noLongerForgingMsg = "";
             let forgingAgainMsg = "";
@@ -138,20 +138,20 @@ let Listener = class Listener {
             this.logger.error(error);
         });
     }
-    getRank(activeDelegates, name) {
-        const filtered = activeDelegates.filter(delegate => delegate.name === name);
-        return filtered.length === 1 ? filtered[0].rank : -1;
+    getRank(delegates, name) {
+        const filtered = delegates.filter(delegate => delegate.name === name);
+        return filtered.length === 1 ? filtered[0].rank : null;
     }
-    getActiveDelegates() {
+    getDelegates() {
         return __awaiter(this, void 0, void 0, function* () {
-            const activeDelegates = yield this.triggers.call("getActiveDelegates", {});
-            if (!activeDelegates) {
-                return [];
-            }
-            return activeDelegates.map((wallet) => {
+            const delegates = yield this.walletRepository.allByUsername();
+            return [...delegates]
+                .sort((a, b) => b.getAttribute("delegate.voteBalance")
+                .comparedTo(a.getAttribute("delegate.voteBalance")))
+                .map((wallet, index) => {
                 return {
                     name: wallet.getAttribute("delegate.username"),
-                    rank: wallet.getAttribute("delegate.rank")
+                    rank: index + 1
                 };
             });
         });
@@ -164,6 +164,10 @@ __decorate([
     core_kernel_1.Container.inject(core_kernel_1.Container.Identifiers.PluginConfiguration),
     core_kernel_1.Container.tagged("plugin", "@eugeneli/core-alerter")
 ], Listener.prototype, "configuration", void 0);
+__decorate([
+    core_kernel_1.Container.inject(core_kernel_1.Container.Identifiers.WalletRepository),
+    core_kernel_1.Container.tagged("state", "blockchain")
+], Listener.prototype, "walletRepository", void 0);
 __decorate([
     core_kernel_1.Container.inject(core_kernel_1.Container.Identifiers.LogService)
 ], Listener.prototype, "logger", void 0);
