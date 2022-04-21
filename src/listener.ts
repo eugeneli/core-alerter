@@ -1,4 +1,6 @@
-import { Container, Contracts, Providers, Enums, Services, Utils as KernelUtils } from "@arkecosystem/core-kernel";
+import { Container, Contracts, Providers, Enums, Utils as KernelUtils } from "@arkecosystem/core-kernel";
+import { BigNumber } from "@arkecosystem/utils";
+import { Events } from "./events";
 
 @Container.injectable()
 export class Listener {
@@ -16,17 +18,16 @@ export class Listener {
     @Container.inject(Container.Identifiers.LogService)
     private readonly logger!: Contracts.Kernel.Logger;
 
-    @Container.inject(Container.Identifiers.TriggerService)
-    private readonly triggers!: Services.Triggers.Triggers;
-
     @Container.inject(Container.Identifiers.EventDispatcherService)
     private readonly events!: Contracts.Kernel.EventDispatcher;
 
     private enabled: boolean;
     private webhook: string;
     private forgingThreshold: number;
-    private watchedDelegates: Map<string, string> = new Map<string, string>();
+    private delegateConfigs: Map<string, any> = new Map<string, string>();
     private delegateToRank: Map<string, number> = new Map<string, number>();
+    private delegateToVotes: Map<string, number> = new Map<string, number>();
+    private delegateToMargin: Map<string, BigNumber> = new Map<string, BigNumber>();
 
     public async boot(): Promise<void> {
         try {
@@ -55,15 +56,16 @@ export class Listener {
             return; 
         }
 
-        this.watchedDelegates = new Map<string, string>((this.configuration.get("delegates") as any[])
-            .map(delegate => [ delegate.name, delegate.discordId ])
+        this.delegateConfigs = new Map<string, string>((this.configuration.get("delegates") as any[])
+            .map(delegate => [ delegate.name, delegate ])
         );
 
         // Initialize watched delegates' ranks
         const delegates: any[] = await this.getDelegates();
         delegates.forEach(delegate => {
-            if (this.watchedDelegates.has(delegate.name)) {
+            if (this.delegateConfigs.has(delegate.name)) {
                 this.delegateToRank.set(delegate.name, delegate.rank);
+                this.delegateToVotes.set(delegate.name, delegate.votes);
             }
         });
         
@@ -71,21 +73,29 @@ export class Listener {
         this.forgingThreshold = this.configuration.get("forgingThreshold");
     }
 
+    // TODO: Break out event handling into other modules
     private async notifyRankChange() {
         const noLongerForging: string[] = [];
         const forgingAgain: string[] = [];
         const newRanks: any[] = [];
+        const dropOutWarnings: any[] = [];
         const delegates: any[] = await this.getDelegates();
 
-        Array.from(this.watchedDelegates.keys()).forEach(name => {
+        Array.from(this.delegateConfigs.keys()).forEach(name => {
             // If we never cached this delegate name's rank, it means we never found it to be an active delegate
             if (!this.delegateToRank.has(name)) {
                 return;
             }
 
+            const config = this.delegateConfigs.get(name);
+
             const rank = this.getRank(delegates, name);
             const prevRank = this.delegateToRank.get(name);
 
+            const votes = this.getVotes(delegates, name);
+            const prevMargin = this.delegateToMargin.get(name);
+
+            // Check ranks
             if (rank > this.forgingThreshold && prevRank <= this.forgingThreshold) {
                 noLongerForging.push(name);
             } else if (rank <= this.forgingThreshold && prevRank > this.forgingThreshold ) {
@@ -98,24 +108,56 @@ export class Listener {
                 });
             }
 
-            // Update rank
+            // Check margin to dropping below forging threshold if still forging
+            // and if margin is less than 5% below previous margin to prevent alerting on small diffs
+            const margin = votes.minus(delegates[this.forgingThreshold].votes).minus(1);
+            if (rank <= this.forgingThreshold && margin.isGreaterThanEqual(0)) {
+                if (margin.isLessThanEqual(BigNumber.SATOSHI.times(config.dropOutMargin)) && 
+                    (!prevMargin || margin.isLessThan(prevMargin.times(95n/100n)))) {
+                    dropOutWarnings.push({
+                        name,
+                        margin
+                    });
+                }
+            }
+
+            // Update rank, votes, and margin
             this.delegateToRank.set(name, rank);
+            this.delegateToVotes.set(name, votes);
+            this.delegateToMargin.set(name, margin);
         });
 
         let noLongerForgingMsg = "";
         let forgingAgainMsg = "";
         let rankChangeMsg = "";
+        let dropOutMsg = "";
 
         noLongerForging.forEach(name => {
-            noLongerForgingMsg += `🚫 **${name}** is no longer forging! ${this.getPing(this.watchedDelegates.get(name))} \n`;
+            const config = this.delegateConfigs.get(name);
+            if (config.messageOn.includes(Events.FORGING_CHANGED)) {
+                noLongerForgingMsg += `🚫 **${name}** is no longer forging! ${this.getPing(config, Events.FORGING_CHANGED)} \n`;
+            }
         });
 
         forgingAgain.forEach(name => {
-            forgingAgainMsg += `🎉 **${name}** is forging! ${this.getPing(this.watchedDelegates.get(name))} \n`;
+            const config = this.delegateConfigs.get(name);
+            if (config.messageOn.includes(Events.FORGING_CHANGED)) {
+                forgingAgainMsg += `🎉 **${name}** is forging! ${this.getPing(config, Events.FORGING_CHANGED)} \n`;
+            }
         });
 
-        newRanks.forEach(delegateRank => {
-            rankChangeMsg += `⚠️ **${delegateRank.name}** changed ranks! (${delegateRank.prevRank} ➡️ ${delegateRank.rank}) ${this.getPing(this.watchedDelegates.get(delegateRank.name))} \n`;
+        newRanks.forEach(rankData => {
+            const config = this.delegateConfigs.get(rankData.name);
+            if (config.messageOn.includes(Events.RANK_CHANGED)) {
+                rankChangeMsg += `⚠️ **${rankData.name}** changed ranks! (${rankData.prevRank} ➡️ ${rankData.rank}) ${this.getPing(config, Events.RANK_CHANGED)} \n`;
+            }
+        });
+
+        dropOutWarnings.forEach(dropOutData => {
+            const config = this.delegateConfigs.get(dropOutData.name);
+            if (config.messageOn.includes(Events.DROPOUT_WARNING)) {
+                dropOutMsg += `⚠️ **${dropOutData.name}** is ${dropOutData.margin.dividedBy(BigNumber.SATOSHI)} votes from dropping out! ${this.getPing(config, Events.DROPOUT_WARNING)} \n`;
+            }
         });
 
         if (noLongerForging.length > 0) {
@@ -127,26 +169,33 @@ export class Listener {
         if (newRanks.length > 0) {
             this.pingDiscord(rankChangeMsg);
         }
+        if (dropOutWarnings.length > 0) {
+            this.pingDiscord(dropOutMsg);
+        }
     }
 
-    private getPing(discordId: string): string {
-	return discordId !== "" ? `<@${discordId}>` : "";
+    // Returns empty string if ping is not required
+    private getPing(config: any, event: string): string {
+        if (config.pingOn.includes(event)) {
+            return `<@${config.discordId}>`
+        } else {
+            return "";
+        }
     }
 
     private notifyMissedBlock(payload: any): void {
         const wallet = payload.data;
         const delegateName = wallet.delegate.getAttribute("delegate.username");
-        let missedMsg = `❌ Delegate **${delegateName}** just missed a block!`;
+        const config = this.delegateConfigs.get(delegateName);
 
-        this.logger.warning(`[Plugin] Event Alerter: ${missedMsg}`);
+        if (config.messageOn.includes(Events.MISSED_BLOCK)) {
+            let missedMsg = `❌ Delegate **${delegateName}** just missed a block!`;
 
-        if (this.watchedDelegates.has(delegateName)) {
-            missedMsg += `<@${this.watchedDelegates.get(delegateName)}>`;
-        } else {
-            return;
+            this.logger.warning(`[Plugin] Event Alerter: ${missedMsg}`);
+
+            missedMsg += this.getPing(config, Events.MISSED_BLOCK);
+            this.pingDiscord(missedMsg);
         }
-
-        this.pingDiscord(missedMsg);
     }
 
     private pingDiscord(msg) {
@@ -160,9 +209,21 @@ export class Listener {
         });  
     }
 
-    private getRank(delegates: any[], name: string) {
+    private findDelegate(delegates: any[], name: string) {
         const filtered = delegates.filter(delegate => delegate.name === name);
-        return filtered.length === 1 ? filtered[0].rank : null;
+        if (filtered.length === 1) {
+            return filtered[0];
+        } else {
+            this.logger.error(`Requested delegate: ${name} not found`);
+        }
+    }
+
+    private getRank(delegates: any[], name: string) {
+        return this.findDelegate(delegates, name).rank;
+    }
+
+    private getVotes(delegates: any[], name: string) {
+        return this.findDelegate(delegates, name).votes;
     }
 
     private async getDelegates() {
@@ -173,7 +234,8 @@ export class Listener {
             .map((wallet, index) => {
                 return {
                     name: wallet.getAttribute("delegate.username"),
-                    rank: index + 1
+                    rank: index + 1,
+                    votes: wallet.getAttribute("delegate.voteBalance")
                 }    
             });
     }
